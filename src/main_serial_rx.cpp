@@ -1,14 +1,13 @@
 #include <iostream>
-#include "serial_comm.h"
+#include "serial_comm_linux.h"
 
 int main(void) {
 	std::string serial_name = "/dev/ttyACM0";
-	int message_length = 19;
+	int baud_rate = 921600;
 
 	try{
-		std::shared_ptr<SerialCommunicator> serial_com;
-		serial_com = std::make_shared<SerialCommunicator>(serial_name, message_length);
-		serial_com->runThread();
+		std::shared_ptr<SerialCommunicatorLinux> serial_com;
+		serial_com = std::make_shared<SerialCommunicatorLinux>(serial_name, baud_rate);
 	}
 	catch (std::exception& e){
 		std::cout << "error : " << e.what() << std::endl;

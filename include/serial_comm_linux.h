@@ -19,31 +19,80 @@
 #include <sys/poll.h>
 #include <sys/time.h>
 
-class SerialCommunicator {
+class SerialCommunicatorLinux {
 public:
-    SerialCommunicator(){};
-    SerialCommunicator(const std::string& portname, const int& msg_len){
+    SerialCommunicatorLinux(){};
+    SerialCommunicatorLinux(const std::string& portname, const int& baud_rate){
         portname_ = portname;
-        MSG_LEN_  = msg_len;
         STX_ = '$';
         ETX_ = '%';
-        CTX_ = '*';
+        
+        // initialize
+        seq_recv_  = 0;
+        seq_send_  = 0;
+        
+        // Check whether this baud rate is valid
+        if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 57600) BAUD_RATE_ = B57600;
+        else if(baud_rate == 115200) BAUD_RATE_ =  B115200;
+        else if(baud_rate == 230400) BAUD_RATE_ =  B230400;
+        else if(baud_rate == 460800) BAUD_RATE_ =  B460800;
+        else if(baud_rate == 500000) BAUD_RATE_ =  B500000;
+        else if(baud_rate == 576000) BAUD_RATE_ =  B576000;
+        else if(baud_rate == 921600) BAUD_RATE_ =  B921600;
+        else if(baud_rate == 1000000) BAUD_RATE_ = B1000000;
+        else if(baud_rate == 1152000) BAUD_RATE_ = B1152000;
+        else if(baud_rate == 1500000) BAUD_RATE_ = B1500000;
+        else if(baud_rate == 2000000) BAUD_RATE_ = B2000000;
+        else if(baud_rate == 2500000) BAUD_RATE_ = B2500000;
+        else if(baud_rate == 3000000) BAUD_RATE_ = B3000000;
+        else if(baud_rate == 3500000) BAUD_RATE_ = B3500000;
+        else if(baud_rate == 4000000) BAUD_RATE_ = B4000000;
+        else std::runtime_error("Unsupported Baudrate...");
+        // In 'termios-baud.h',
+        // #define  B57600    0010001
+        // #define  B115200   0010002
+        // #define  B230400   0010003
+        // #define  B460800   0010004
+        // #define  B500000   0010005
+        // #define  B576000   0010006
+        // #define  B921600   0010007
+        // #define  B1000000  0010010
+        // #define  B1152000  0010011
+        // #define  B1500000  0010012
+        // #define  B2000000  0010013
+        // #define  B2500000  0010014
+        // #define  B3000000  0010015
+        // #define  B3500000  0010016
+        // #define  B4000000  0010017
+        // #define __MAX_BAUD B4000000
+
+        this->runThread();
 
         printf("[SerialComm] Portname is {%s}, message length: {%d}\n", portname_.c_str(), MSG_LEN_);
     };
+
     // deconstructor
-    ~SerialCommunicator() {
+    ~SerialCommunicatorLinux() {
         this->thread_.join();
     }
 
     void runThread(){
-        this->thread_ = std::thread(&SerialCommunicator::process, this);
+        this->thread_ = std::thread(&SerialCommunicatorLinux::process, this);
     };
 
 
 private:
+    void read_withChecksum(char* msg){
+       
+    };
+
     void process(){
-        uint64_t seq = 0;
         printf("Process runs.\n");
         fd_ = open(portname_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
         if (fd_ == -1) {
@@ -52,10 +101,9 @@ private:
         }
         else printf("{%s} is opened.\n",portname_.c_str());
 
-
         // newtio_rx initialization.
         memset(&this->newtio_rx_, 0, sizeof(this->newtio_rx_));
-        newtio_rx_.c_cflag     = B460800 | CS8 | CLOCAL | CREAD;
+        newtio_rx_.c_cflag     = BAUD_RATE_ | CS8 | CLOCAL | CREAD;
         newtio_rx_.c_oflag     = 0;
         newtio_rx_.c_lflag     = 0;
         newtio_rx_.c_cc[VTIME] = 0;
@@ -70,7 +118,6 @@ private:
         poll_events_.revents = 0;
         
         stack_len_ = 0;
-        int cnt = 0;
         while(true) {
             // polling stage. (when some data is received.)
             poll_state_ = poll(                 //poll() call. event check.
@@ -88,35 +135,38 @@ private:
                     //#define POLLNVAL 0x0020 // 파일지시자가 열리지 않은 것 같은, Invalid request (잘못된 요청)
 
                     // Read serial RX buffer
+                    // char msg_recv[1024];
+                    // this->read_withChecksum(msg_recv);
                     int len_read = read(fd_, buf_, BUF_SIZE);
                     
                     for(int i = 0; i < len_read; ++i) {
                         if(buf_[i] == ETX_){ // Test 1: ETX
                             // data part : serial_stack_[1] ~ serial_stack_[MSG_LEN_]
-                            if(serial_stack_[0] == STX_ 
-                            && serial_stack_[MSG_LEN_+1] == CTX_) { // Test 2: STX and CTX
-                                char check_sum = stringChecksum(serial_stack_, 1, MSG_LEN_);
+                            if(serial_stack_[0] == STX_) { // Test 2: STX
+                                MSG_LEN_ = (int)serial_stack_[1];
+                                char check_sum = stringChecksum(serial_stack_, 2, MSG_LEN_+1);
                                 if(serial_stack_[MSG_LEN_+2] == check_sum) { // Test 3: checksum test.
-                                    ++seq;                                   
+                                    ++seq_recv_;                                   
                                     short acc[3]; 
                                     short gyro[3];
+                                    short mag[3];
                                     double t_now = 0;
                                     
-                                    acc[0]  = decode2BytesToShort(serial_stack_[1],serial_stack_[2]);
-                                    acc[1]  = decode2BytesToShort(serial_stack_[3],serial_stack_[4]);
-                                    acc[2]  = decode2BytesToShort(serial_stack_[5],serial_stack_[6]);
-                                    gyro[0] = decode2BytesToShort(serial_stack_[7],serial_stack_[8]);
-                                    gyro[1] = decode2BytesToShort(serial_stack_[9],serial_stack_[10]);
-                                    gyro[2] = decode2BytesToShort(serial_stack_[11],serial_stack_[12]);
-                                    t_now   = decodeTime(serial_stack_[13],serial_stack_[14],
-                                                         serial_stack_[15],serial_stack_[16],serial_stack_[17],serial_stack_[18]);
-                                    std::cout << "seq:" << seq <<", time:" 
+                                    for(int k = 0; k < 3; ++k){
+                                        int k6 = 6*k + 2;
+                                        acc[k]  = decode2BytesToShort(serial_stack_[k6],   serial_stack_[1+k6]);
+                                        gyro[k] = decode2BytesToShort(serial_stack_[2+k6], serial_stack_[3+k6]);
+                                        mag[k]  = decode2BytesToShort(serial_stack_[4+k6], serial_stack_[5+k6]);
+                                    }
+                                    t_now   = decodeTime(serial_stack_[20],serial_stack_[21],
+                                                         serial_stack_[22],serial_stack_[23],serial_stack_[24],serial_stack_[25]);
+                                    std::cout << "seq:" << seq_recv_ <<", msglen:" << MSG_LEN_ <<", time:" 
                                     << t_now << " / "  << acc[0] <<"," <<acc[1] <<"," << acc[2] 
-                                    << " / " << gyro[0] << "," << gyro[1] << "," << gyro[2] << std::endl;
+                                    << " / " << gyro[0] << "," << gyro[1] << "," << gyro[2]
+                                    << " / " << mag[0] << "," << mag[1] << "," << mag[2] << std::endl;
                                 }
                             }
                             stack_len_ = 0;
-                            ++cnt;
                         }
                         else serial_stack_[stack_len_++] = buf_[i];
                     }
@@ -138,7 +188,6 @@ private:
     };
 
 private:
-
     char stringChecksum(char* s, int idx_start, int idx_end) {
         char c = 0;
         for(int i = idx_start; i <= idx_end; i++) c ^= s[i];
@@ -147,6 +196,7 @@ private:
 
 private:
     std::string portname_;
+    int BAUD_RATE_;
 
     int fd_;
     struct termios newtio_rx_;
@@ -157,10 +207,13 @@ private:
     int MSG_LEN_;
     char STX_;
     char ETX_;
-    char CTX_;
 
     int stack_len_;
     char serial_stack_[BUF_SIZE];
+
+private:
+    uint64_t seq_recv_;
+    uint64_t seq_send_;
 
 private:
     std::thread thread_;
