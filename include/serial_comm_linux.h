@@ -69,7 +69,15 @@ public:
         // #define  B4000000  0010017
         // #define __MAX_BAUD B4000000
 
-        openSerialPort();
+        double bytes_per_second = (double)baud_rate/(10.0);
+        double packet_per_second = bytes_per_second/27.0; // 3413. Hz
+        double time_per_packet = 1./packet_per_second;
+
+        std::cout << "bytes_per_second: " << bytes_per_second << std::endl;
+        std::cout << "packet_per_second: " << packet_per_second << std::endl;
+        std::cout << "time_per_packet: " << time_per_packet*1000.0 << " [ms]" << std::endl; // 0.29 ms
+
+        this->openSerialPort();
         
         this->runThreadRX();
         this->runThreadTX();
@@ -98,7 +106,7 @@ private:
     };
 
     void send_withChecksum(const char* data, int len){
-        char crc = stringChecksum(data,0,len-1);
+        char crc = stringChecksum(data, 0, len-1);
 
         char len_c = (char)len;
         write(fd_,&STX_,  1);
