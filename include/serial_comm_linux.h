@@ -23,6 +23,22 @@
 using namespace std::chrono_literals;
 
 class SerialCommunicatorLinux {
+private:
+    typedef union USHORT_UNION_{
+        uint16_t ushort_;
+        char bytes_[2];
+    } USHORT_UNION;
+
+    typedef union UINT_UNION_{
+        uint32_t uint_;
+        char bytes_[4];
+    } UINT_UNION;
+
+    typedef union FLOAT_UNION_{
+        float float_;
+        char bytes_[4];
+    } FLOAT_UNION;
+
 public:
     SerialCommunicatorLinux(){};
     SerialCommunicatorLinux(const std::string& portname, const int& baud_rate){
@@ -120,6 +136,13 @@ private:
     };
 
     void processRX(){
+        // Variables
+        USHORT_UNION acc[3];
+        USHORT_UNION gyro[3];
+        USHORT_UNION mag[3];
+        USHORT_UNION sec;
+        UINT_UNION   usec;
+
         // newtio_rx initialization.
         memset(&this->newtio_rx_, 0, sizeof(this->newtio_rx_));
         newtio_rx_.c_cflag     = BAUD_RATE_ | CS8 | CLOCAL | CREAD;
@@ -158,30 +181,35 @@ private:
                     // this->read_withChecksum(msg_recv);
                     int len_read = read(fd_, buf_, BUF_SIZE);
                     for(int i = 0; i < len_read; ++i) {
-                        if(buf_[i] == ETX_){ // Test 1: ETX
-                            // data part : serial_stack_[1] ~ serial_stack_[MSG_LEN_]
-                            if(serial_stack_[0] == STX_) { // Test 2: STX
+                        if(buf_[i] == ETX_){ // 'ETX', data part : serial_stack_[1] ~ serial_stack_[MSG_LEN_]
+                            if(serial_stack_[0] == STX_) { // 'STX'
                                 MSG_LEN_ = (int)serial_stack_[1];
                                 char check_sum = stringChecksum(serial_stack_, 2, MSG_LEN_+1);
-                                if(serial_stack_[MSG_LEN_+2] == check_sum) { // Test 3: checksum test.
-                                    ++seq_recv_;                                   
-                                    short acc[3]; 
-                                    short gyro[3];
-                                    short mag[3];
+                                if(serial_stack_[MSG_LEN_+2] == check_sum) { // 'Checksum test'
+                                    ++seq_recv_;
                                     double t_now = 0;
+                                    acc[0].bytes_[0] = serial_stack_[3];    acc[0].bytes_[1] = serial_stack_[2];
+                                    acc[1].bytes_[0] = serial_stack_[5];    acc[1].bytes_[1] = serial_stack_[4];
+                                    acc[2].bytes_[0] = serial_stack_[7];    acc[2].bytes_[1] = serial_stack_[6];
+
+                                    gyro[0].bytes_[0] = serial_stack_[3+6]; gyro[0].bytes_[1] = serial_stack_[2+6];
+                                    gyro[1].bytes_[0] = serial_stack_[5+6]; gyro[1].bytes_[1] = serial_stack_[4+6];
+                                    gyro[2].bytes_[0] = serial_stack_[7+6]; gyro[2].bytes_[1] = serial_stack_[6+6];
                                     
-                                    for(int k = 0; k < 3; ++k){
-                                        int k6 = 6*k + 2;
-                                        acc[k]  = decode2BytesToShort(serial_stack_[k6],   serial_stack_[1+k6]);
-                                        gyro[k] = decode2BytesToShort(serial_stack_[2+k6], serial_stack_[3+k6]);
-                                        mag[k]  = decode2BytesToShort(serial_stack_[4+k6], serial_stack_[5+k6]);
-                                    }
-                                    t_now   = decodeTime(serial_stack_[20],serial_stack_[21],
-                                                         serial_stack_[22],serial_stack_[23],serial_stack_[24],serial_stack_[25]);
+                                    mag[0].bytes_[0] = serial_stack_[3+12]; mag[0].bytes_[1] = serial_stack_[2+12];
+                                    mag[1].bytes_[0] = serial_stack_[5+12]; mag[1].bytes_[1] = serial_stack_[4+12];
+                                    mag[2].bytes_[0] = serial_stack_[7+12]; mag[2].bytes_[1] = serial_stack_[6+12];
+                                    
+                                    sec.bytes_[0] = serial_stack_[20]; sec.bytes_[1] = serial_stack_[21];
+                                    usec.bytes_[0] = serial_stack_[22]; usec.bytes_[1] = serial_stack_[23];
+                                    usec.bytes_[2] = serial_stack_[24]; usec.bytes_[3] = serial_stack_[25];
+
+                                    t_now   = ((double)sec.ushort_ + (double)usec.uint_/1000000.0);
+
                                     std::cout << "seq:" << seq_recv_ <<", msglen:" << MSG_LEN_ <<", time:" 
-                                    << t_now << " / "  << acc[0] <<"," <<acc[1] <<"," << acc[2] 
-                                    << " / " << gyro[0] << "," << gyro[1] << "," << gyro[2]
-                                    << " / " << mag[0] << "," << mag[1] << "," << mag[2] << std::endl;
+                                    << t_now << " / "  << (short)acc[0].ushort_ <<"," << (short)acc[1].ushort_ << "," << (short)acc[2].ushort_ 
+                                    << " / " << (short)gyro[0].ushort_ << "," << (short)gyro[1].ushort_ << "," << (short)gyro[2].ushort_
+                                    << " / " << (short)mag[0].ushort_ << "," << (short)mag[1].ushort_ << "," << (short)mag[2].ushort_ << std::endl;
                                 }
                             }
                             stack_len_ = 0;
@@ -250,19 +278,18 @@ private:
     std::thread thread_rx_;
     std::thread thread_tx_;
 
-private:
+// private:
+    // inline short decode2BytesToShort(char h_byte, char l_byte){
+    //     return (unsigned short) (((unsigned char)h_byte << 8 )| (unsigned char)l_byte);
+    // };
 
-    inline short decode2BytesToShort(char h_byte, char l_byte){
-        return (short) (((unsigned char)h_byte << 8 )| (unsigned char)l_byte);
-    };
-
-    double decodeTime(char sec_l, char sec_h, char usec0, char usec1, char usec2, char usec3){
-        unsigned short sec 
-            = (unsigned short) ( (unsigned char)sec_h << 8 | (unsigned char)sec_l);
-        unsigned int usec  
-            = (unsigned int)   ( (unsigned char)usec3 << 24 | (unsigned char)usec2 << 16 | (unsigned char)usec1 << 8 | (unsigned char)usec0 );
-        return ((double)sec + (double)usec/1000000.0);
-    };
+    // double decodeTime(uint8_t sec_l, uint8_t sec_h, uint8_t usec0, uint8_t usec1, uint8_t usec2, uint8_t usec3){
+    //     unsigned short sec 
+    //         = (unsigned short) ( (unsigned char)sec_h << 8 | (unsigned char)sec_l);
+    //     unsigned int usec  
+    //         = (unsigned int)   ( (unsigned char)usec3 << 24 | (unsigned char)usec2 << 16 | (unsigned char)usec1 << 8 | (unsigned char)usec0 );
+    //     return ((double)sec + (double)usec/1000000.0);
+    // };
 };
 
 
