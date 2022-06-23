@@ -405,12 +405,12 @@ void readMagData(int16_t * destination, uint8_t * dest_8)
     destination[1] = (int16_t)(((int16_t)rawData[3] << 8) | rawData[2]) ;  // Data stored as little Endian
     destination[2] = (int16_t)(((int16_t)rawData[5] << 8) | rawData[4]) ; 
     
-    dest_8[0] = rawData[0];
-    dest_8[1] = rawData[1];
-    dest_8[2] = rawData[2];
-    dest_8[3] = rawData[3];
-    dest_8[4] = rawData[4];
-    dest_8[5] = rawData[5];
+    dest_8[0] = rawData[1];
+    dest_8[1] = rawData[0];
+    dest_8[2] = rawData[3];
+    dest_8[3] = rawData[2];
+    dest_8[4] = rawData[5];
+    dest_8[5] = rawData[4];
    }
   }
 }
