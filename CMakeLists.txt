@@ -8,7 +8,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR})
 set(includeDirs ${includeDirs} ${CMAKE_CURRENT_BINARY_DIR})
 set(includeDirs ${includeDirs} include)
 
-set(SRC ${SRC})
+set(SRC ${SRC}
+    src/serial_comm_linux.cpp)
 
 include_directories( ${includeDirs} )
 
