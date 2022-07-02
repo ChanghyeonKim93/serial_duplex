@@ -6,6 +6,8 @@
 #include <iostream>
 #include <time.h>
 #include <thread>
+#include <mutex>
+
 #include <string>
 #include <cstring>
 #include <chrono>
@@ -28,6 +30,9 @@ class SerialCommunicatorLinux {
 public:
     SerialCommunicatorLinux(const std::string& portname, const int& baud_rate);
     ~SerialCommunicatorLinux();
+
+    std::shared_ptr<std::mutex> getMutexTX();
+    std::shared_ptr<std::mutex> getMutexRX();
 
 private:
     // initialize functions
@@ -66,7 +71,7 @@ private:
     //#define POLLNVAL 0x0020 // 파일지시자가 열리지 않은 것 같은, Invalid request (잘못된 요청)
 
     int  poll_state_;
-    uint8_t buf_[BUF_SIZE];
+    uint8_t recv_buf_[BUF_SIZE];
     
     int  MSG_LEN_;
     uint8_t STX_;
@@ -82,6 +87,13 @@ private:
 private:
     std::thread thread_rx_;
     std::thread thread_tx_;
+
+    std::shared_ptr<std::mutex> mut_rx_;
+    std::shared_ptr<std::mutex> mut_tx_;
+
+private:
+    uint8_t recv_packet_[BUF_SIZE];
+
 };
 
 

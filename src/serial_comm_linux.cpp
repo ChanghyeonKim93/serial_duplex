@@ -1,6 +1,9 @@
 #include "serial_comm_linux.h"
 
 SerialCommunicatorLinux::SerialCommunicatorLinux(const std::string& portname, const int& baud_rate){
+    mut_rx_ = std::make_shared<std::mutex>();
+    mut_tx_ = std::make_shared<std::mutex>();
+    
     portname_ = portname;
     STX_      = '$';
     ETX_      = '%';
@@ -93,9 +96,9 @@ void SerialCommunicatorLinux::openSerialPort(){
 
 int SerialCommunicatorLinux::read_withChecksum(uint8_t* msg){
     int len_packet = 0;
-    int len_read = read(fd_, buf_, BUF_SIZE);
+    int len_read = read(fd_, recv_buf_, BUF_SIZE);
     for(int i = 0; i < len_read; ++i) {
-        if(buf_[i] == ETX_){ // 'ETX', data part : serial_stack_[1] ~ serial_stack_[MSG_LEN_]
+        if(recv_buf_[i] == ETX_){ // 'ETX', data part : serial_stack_[1] ~ serial_stack_[MSG_LEN_]
             if(serial_stack_[0] == STX_) { // 'STX'
                 MSG_LEN_ = (int)serial_stack_[1];
                 uint8_t check_sum = stringChecksum(serial_stack_, 2, MSG_LEN_+1);
@@ -106,7 +109,7 @@ int SerialCommunicatorLinux::read_withChecksum(uint8_t* msg){
             }
             stack_len_ = 0;
         }
-        else serial_stack_[stack_len_++] = buf_[i];
+        else serial_stack_[stack_len_++] = recv_buf_[i];
     }
     return len_packet;
 };
@@ -149,8 +152,8 @@ void SerialCommunicatorLinux::processRX(){
         if (poll_state_ > 0) {
             if (poll_events_.revents & POLLIN) { 
                 // Read serial RX buffer
-                uint8_t packet[1024];
-                int len_packet = read_withChecksum(packet);
+                mut_rx_->lock();
+                int len_packet = read_withChecksum(recv_packet_);
                 if(len_packet > 0) {
                     // Variables
                     USHORT_UNION acc[3];
@@ -159,21 +162,22 @@ void SerialCommunicatorLinux::processRX(){
                     USHORT_UNION sec;
                     UINT_UNION   usec;
 
-                    acc[0].bytes_[0] = packet[1];    acc[0].bytes_[1] = packet[0];
-                    acc[1].bytes_[0] = packet[3];    acc[1].bytes_[1] = packet[2];
-                    acc[2].bytes_[0] = packet[5];    acc[2].bytes_[1] = packet[4];
+                    acc[0].bytes_[0] = recv_packet_[1];    acc[0].bytes_[1] = recv_packet_[0];
+                    acc[1].bytes_[0] = recv_packet_[3];    acc[1].bytes_[1] = recv_packet_[2];
+                    acc[2].bytes_[0] = recv_packet_[5];    acc[2].bytes_[1] = recv_packet_[4];
 
-                    gyro[0].bytes_[0] = packet[1+6]; gyro[0].bytes_[1] = packet[0+6];
-                    gyro[1].bytes_[0] = packet[3+6]; gyro[1].bytes_[1] = packet[2+6];
-                    gyro[2].bytes_[0] = packet[5+6]; gyro[2].bytes_[1] = packet[4+6];
+                    gyro[0].bytes_[0] = recv_packet_[1+6]; gyro[0].bytes_[1] = recv_packet_[0+6];
+                    gyro[1].bytes_[0] = recv_packet_[3+6]; gyro[1].bytes_[1] = recv_packet_[2+6];
+                    gyro[2].bytes_[0] = recv_packet_[5+6]; gyro[2].bytes_[1] = recv_packet_[4+6];
                     
-                    mag[0].bytes_[0] = packet[1+12]; mag[0].bytes_[1] = packet[0+12];
-                    mag[1].bytes_[0] = packet[3+12]; mag[1].bytes_[1] = packet[2+12];
-                    mag[2].bytes_[0] = packet[5+12]; mag[2].bytes_[1] = packet[4+12];
+                    mag[0].bytes_[0] = recv_packet_[1+12]; mag[0].bytes_[1] = recv_packet_[0+12];
+                    mag[1].bytes_[0] = recv_packet_[3+12]; mag[1].bytes_[1] = recv_packet_[2+12];
+                    mag[2].bytes_[0] = recv_packet_[5+12]; mag[2].bytes_[1] = recv_packet_[4+12];
                     
-                    sec.bytes_[0] = packet[18]; sec.bytes_[1] = packet[19];
-                    usec.bytes_[0] = packet[20]; usec.bytes_[1] = packet[21];
-                    usec.bytes_[2] = packet[22]; usec.bytes_[3] = packet[23];
+                    sec.bytes_[0] = recv_packet_[18]; sec.bytes_[1] = recv_packet_[19];
+                    
+                    usec.bytes_[0] = recv_packet_[20]; usec.bytes_[1] = recv_packet_[21];
+                    usec.bytes_[2] = recv_packet_[22]; usec.bytes_[3] = recv_packet_[23];
 
                     double t_now   = ((double)sec.ushort_ + (double)usec.uint_/1000000.0);
                     ++seq_recv_;
@@ -183,6 +187,7 @@ void SerialCommunicatorLinux::processRX(){
                     << " / " << (short)gyro[0].ushort_ << "," << (short)gyro[1].ushort_ << "," << (short)gyro[2].ushort_
                     << " / " << (short)mag[0].ushort_ << "," << (short)mag[1].ushort_ << "," << (short)mag[2].ushort_ << std::endl;
                 }
+                mut_rx_->unlock();
             }
             if (poll_events_.revents & POLLERR) {// The connection is destructed.
                 printf("SerialCommunicatorLinux ERROR - There is communication error. program exit.");
@@ -215,4 +220,12 @@ uint8_t SerialCommunicatorLinux::stringChecksum(const uint8_t* s, int idx_start,
     uint8_t c = 0;
     for(int i = idx_start; i <= idx_end; i++) c ^= s[i];
     return c;
+};
+
+std::shared_ptr<std::mutex> SerialCommunicatorLinux::getMutexRX(){
+    return mut_rx_;
+};
+
+std::shared_ptr<std::mutex> SerialCommunicatorLinux::getMutexTX(){
+    return mut_tx_;
 };
